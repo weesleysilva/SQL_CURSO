@@ -1,19 +1,43 @@
-# Módulo 1: Iniciante - Fundamentos do SQL
+# Módulo 1: Iniciante - Fundamentos e Modelagem de SQL
 
 ## Visão Geral
-Neste módulo, iniciaremos a nossa jornada no mundo do SQL (Structured Query Language). O foco será em aprender a extrair informações básicas de um banco de dados, utilizando filtros, lógicas simples e ordenações.
+Neste módulo, iniciaremos a jornada no mundo da persistência e consulta. O SQL não é apenas "puxar tabelas do Excel pro código", mas criar e extrair dados garantindo confiabilidade de restrições por chaves, além de lógicas condicionais simples.
 
-*Cenário de Negócio*: Uma plataforma de E-commerce chamada "TechStore", onde analisaremos os nossos clientes, produtos e o histórico pedidos.
+*Cenário de Negócio*: Uma plataforma de E-commerce chamada "TechStore".
+
+---
+
+## 0. O Pilar de Modelagem: Constraint PK e FK
+
+### Teoria
+Um banco de dados só funciona se houver relação estrutural. Modelagens quebradas geram lixo eterno que nenhuma consulta resolve.
+*   **Primary Key (PK)**: É o "CPF" digital da sua linha e da tabela. Sendo exclusiva (`UNIQUE`), ela garante nunca ocorrer duplicação e cria alta performance de identificação (ex: `id_cliente`).
+*   **Foreign Key (FK - Chave Estrangeira)**: É uma constraint (restrição) vital. A Chave estrangeira localiza um elemento originado fortemente em OUTRA tabela e proíbe a inconsistência no seu negócio (Ou seja, seu código será bloqueado caso tente registrar uma compra usando na fatura o CPF de um cliente que nunca sequer completou o cadastro raiz na Tabela Clientes original. Essa é a base de um ERP e do princípio da ACID em banco).
+
+### Prática
+**Cenário**: Durante nosso projeto com script `.env`, modelamos as engrenagens apontando as chaves:
+```sql
+CREATE TABLE clientes (
+    id_cliente INT PRIMARY KEY,           -- Essa tabela Nasce livre, esse é o núcleo dela
+    nome VARCHAR(100) NOT NULL
+);
+
+CREATE TABLE pedidos (
+    id_pedido INT PRIMARY KEY,
+    id_cliente INT NOT NULL,              -- Coluna associativa que abrigará o id nas rotinas de fluxo
+    CONSTRAINT amarra_cliente FOREIGN KEY (id_cliente) REFERENCES clientes(id_cliente)  -- A trava do DBA!
+);
+```
 
 ---
 
 ## 1. Consultas Básicas (SELECT)
 
 ### Teoria
-O comando `SELECT` é o pilar central de qualquer consulta em SQL. Ele é utilizado para selecionar colunas com dados de um banco de dados (tabelas). Os dados retornados são armazenados em uma estrutura chamada de *result-set*.
+O comando `SELECT` é o pilar que fará leitura aos discos. Os dados retornados são armazenados em uma matriz virtual no seu monitor de *result-set*.
 
 ### Prática
-**Cenário**: O setor de comunicação precisa da lista com os nomes e e-mails de todos os clientes cadastrados na loja para enviar um disparo de promoções.
+**Cenário**: Relatório com nomes e e-mails de todos na loja para e-mail marketing.
 ```sql
 SELECT 
     nome, 
@@ -23,21 +47,15 @@ FROM clientes;
 
 ---
 
-## 2. Filtros e Lógica Condicional (WHERE)
+## 2. Filtros e Lógicas (WHERE)
 
 ### Teoria
-A cláusula `WHERE` é usada para extrair apenas os registros que cumprem uma condição específica em uma consulta. Funciona exatamente como um filtro refinado sobre os dados brutos.
+Agindo como filtro rígido, o `WHERE` desconsidera todos os dados volumosos antes de retornar para a rede.
 
 ### Prática
-**Cenário**: O E-commerce decidiu realizar uma promoção focada apenas em clientes que moram no estado de "São Paulo" (SP).
+**Cenário**: Focar promoções só no estado de SP.
 ```sql
-SELECT 
-    nome, 
-    email, 
-    cidade, 
-    estado 
-FROM clientes 
-WHERE estado = 'SP';
+SELECT nome, email, cidade, estado FROM clientes WHERE estado = 'SP';
 ```
 
 ---
@@ -45,47 +63,34 @@ WHERE estado = 'SP';
 ## 3. Ordenação Estruturada (ORDER BY)
 
 ### Teoria
-A palavra-chave `ORDER BY` organiza o conjunto de resultados retornados, ordenando os valores da sua busca de forma natural em ordem Crescente (`ASC`) ou então em ordem Decrescente (`DESC`).
+O `ORDER BY` organiza tudo no eixo nativo de forma natural (Alfabeto/Numérico) do Crescente (`ASC`) ao Decrescente (`DESC`).
 
 ### Prática
-**Cenário**: Listar todo o catálogo de produtos da nossa loja, começando sempre a visualização pelos produtos mais caros (ordem decrescente de valor).
+**Cenário**: Produtos exibidos do mais caro para o barato na Dashboard Front-end.
 ```sql
-SELECT 
-    nome_produto, 
-    preco 
-FROM produtos 
-ORDER BY preco DESC;
+SELECT nome_produto, preco FROM produtos ORDER BY preco DESC;
 ```
 
 ---
 
-## 4. Limitação de Resultados (LIMIT ou TOP)
+## 4. Otimização Front-End: Limitação (LIMIT ou TOP)
 
 ### Teoria
-A cláusula `LIMIT` (ou equivalente `SELECT TOP`, como usado no SQL Server) especifica o número máximo e estrito de registros que o banco de dados deve retornar. Isso é excelente em tabelas muito volumosas para otimizar tempo de resposta e criar rapidamente rankings.
+Usando em MYSQL/POSTGRES `LIMIT` e SQLServer `TOP`, informamos a Engine que o sistema requer que devolva um montante fixo estritizado no topo, o banco ignorará processar o "restante dos zilhões de elementos", caindo o processamento para frações de milisegundo.
 
 ### Prática
-**Cenário**: A tela inicial do painel de administração da TechStore precisa mostrar de forma rápida quem foram os autores e os valores dos 5 pedidos mais recentes feitos na plataforma.
+**Cenário**: Widget "Vendas de hoje" rodando um Top 5 rápidos (SQL Server Example).
 ```sql
-SELECT 
-    id_pedido,
-    nome_cliente,
-    data_pedido, 
-    valor_total 
-FROM pedidos 
-ORDER BY data_pedido DESC 
-LIMIT 5;
+SELECT TOP 5 id_pedido, data_pedido FROM pedidos ORDER BY data_pedido DESC;
 ```
 
 ---
 
-## 🔥 Desafio de Código - Módulo 1
+## 🔥 Desafio de Código - Prática do Módulo 1
 
-**Instruções**:
-O time de marketing precisa rodar as campanhas de remarketing. Eles querem concentrar esforços oferecendo produtos baratos (que costumam converter impulsivamente) para clientes concentrados puramente no estado de "Minas Gerais" (MG).
-
-**Sua Tarefa (Escreva esse código em sua IDE)**:
-1. Trabalhando com a tabela `produtos`, extraia uma lista exibindo *só* a coluna `nome_produto` e `preco`.
-2. O filtro da tabela precisa desconsiderar falhas de cadastro (ou seja: liste apenas produtos que tenham `preco > 0`).
-3. Retorne apenas os 10 mais baratos.
-4. *(Bônus de Lógica)*: Onde, e como, a cláusula que filtraria usuários do estado de Minas Gerais ('MG') se encaixaria se o código buscasse dados na tabela de "clientes"?
+**Sua Tarefa (Acesse seu servidor e rode):**
+O time de marketing quer os dados limpos das "pechinchas".
+1. Escreva em sua IDE/Painel contra a tabela `produtos` trazendo só o `nome_produto` e o `preco`.
+2. Filtre para não exibir lixos operacionais acidentais (ou seja `preco > 0`).
+3. Ordene logicamente (`ASC` no *value*) de modo que o foco incida só nas margens baratas de liquidação.
+4. *(Avançado)* Extra: Liste apenas os 'Top 3' mais baratos de toda lista.

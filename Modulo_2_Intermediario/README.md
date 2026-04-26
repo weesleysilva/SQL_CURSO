@@ -1,91 +1,106 @@
-# Módulo 2: Intermediário - Agregações e Relações
+# Módulo 2: Intermediário - Agregações e O Poder Relacional Pleno
 
 ## Visão Geral
-Chegou o momento de avançar. Sabendo extrair as informações filtradas da tabela, agora aprenderemos a juntar dados em de tabelas diferentes para cruzar informações ou condensar em blocos estatísticos que façam sentido.
+Chegou o momento de explodirmos em horizontal a capacidade relacional. O SQL puro extrai registros limpos, mas sistemas densos necessitam de cruzamento profundo de dezenas de tabelas de forma contigente.
 
-*Cenário de Negócio*: Um banco digital e fintech chamado "FinBank", necessitando criar relatórios gerenciais das suas de milhares contas e transações.
+*Cenário*: Banco Fintech "FinBank", necessitando criar relatórios gerenciais das suas de milhares contas e estatísticas transversais na mesa de operações com precisão de auditoria.
 
 ---
 
-## 1. Agregações e Estatísticas (GROUP BY)
+## 1. Agregações e Estatísticas Gerenciais (GROUP BY)
 
 ### Teoria
-O `GROUP BY` agrupa diferentes linhas que dividem os mesmos valores. Usamos muito em conjunto com as funções de agregação, como `COUNT()` (contar os dados), `SUM()` (somar todos os valores), `AVG() `(média), entre outras, para calcular grandes indicadores rapidamente.
+O `GROUP BY` agrupa diferentes linhas em um só balde baseado numa categoria comum e as funde. Ele requer a injeção do uso das matemáticas `COUNT()`, `SUM()`, `AVG()` para sumarizar a lógica do balde.
 
 ### Prática
-**Cenário**: O Head do banco precisa saber o saldo total armazenado em cada tipo de conta (Corrente e Poupança), além da contagem de quantas contas existem de cada uma.
+**Cenário**: O Head do banco pediu para visualizar a quantidade massiva de contas resumida por cada tipo existente (poupança x corrente) e o total em dinheiro flutuando ali.
 ```sql
 SELECT 
     tipo_conta, 
-    COUNT(id_conta) AS volume_de_contas,
-    SUM(saldo) AS total_acumulado 
+    COUNT(id_conta) AS volume_de_contas_agrupadas,
+    SUM(saldo) AS montante_dinheiro
 FROM contas 
 GROUP BY tipo_conta;
 ```
 
 ---
 
-## 2. Filtrando sobre Agrupações (HAVING)
+## 2. Refinadores (HAVING) vs WHERE
 
 ### Teoria
-Muitos iniciantes tentam usar `WHERE` com agregações e encontram erro. A função `HAVING` foi incorporada a linguagem por isso: ela filtra os dados *só e unicamente depois* que eles já foram fatiados/agrupados pelo `GROUP BY`.
+Muitos iniciantes tentam aplicar lógicas `> ou <` e desabam no erro na hora de usar em resultados dinâmicos gerados pelas matemáticas do agrupamento. Enquanto o `WHERE` atua nos "DADOS CRUS" (Antes do Motor Agrupar), o `HAVING` possui capacidade de filtro especial que age apenas DEPOIS nos "DADOS JÁ PROCESSADOS".
 
 ### Prática
-**Cenário**: Identificar e recompensar as lideranças nas agências bancárias que possuem em sua dependência um volume real de mais do que 1000 contas ativadas.
+**Cenário**: Filtrar e expurgar lideranças em agências que, na realidade prática da contabilização, falharam em demonstrar movimentação agregada acima do teto de retenção de R$10.000.
 ```sql
 SELECT 
     id_agencia, 
-    COUNT(id_conta) AS quantidade_contas_ativas 
+    SUM(saldo) AS dinheiro_custodia 
 FROM contas 
-WHERE status_conta = 'Ativa' -- Esse executa PRIMEIRO 
+WHERE status_conta = 'Ativa' -- Rodado 1o: Filtra as limpas iniciais (ignorando canceladas p/ poupar memória)
 GROUP BY id_agencia 
-HAVING COUNT(id_conta) > 1000; -- Esse executa SOBRE O RESULTADO do Count
+HAVING SUM(saldo) > 10000;   -- Rodado 2o: Aqui sim avalio sobre a Métrica e ignoro se as ativas renderam miséria.
 ```
 
 ---
 
-## 3. Cruzamento e Relacionamento de Dados (JOINs)
+## 3. A Espinha Dorsal Integradora (Dominando os JOINs)
 
 ### Teoria
-Múltiplas formas do `JOIN` (`INNER JOIN`, `LEFT JOIN`, `RIGHT JOIN`, `FULL OUTER JOIN`) operam como soldadores. Elas juntam colunas de duas ou mais tabelas baseando-se sempre em um ponto comum de ligação entre elas (geralmente chaves primárias/estrangeiras como ID). O `INNER JOIN`, modelo mais normal, traz a combinação onde a ligação exata é encontrada em ambas as pontas.
+A função "Juntar/Cruzar" é o que dá a letra R ("Relational") à RDBMS.
+Usando as chaves (PK e FK referenciadas no Modulo 1) amarramos planilhas. Compreenda a variação da Arquitetura:
+*   `INNER JOIN`: Combinação estrita. Retorna apenas, e tão somente as linhas, que a correspondência da amarração existiu *AMBOS* OS LADOS. Fatiando as anomalias ou vazios.
+*   `LEFT JOIN` (O mais comum em relatórios abertos): Trás absolutamente TODAS AS LINHAS cruas da sua Tabela original A (Esquerda), tentando anexar colados à ela os dados da Tabela B. Se o cliente na A nunca realizou compras na B, ele ainda vem no resultado na Tela mas devolvendo os campos nulos (NULL) da outra. Excelente pra relatórios "Geral".
 
 ### Prática
-**Cenário**: Entregar o histórico detalhado mesclando a base pura com a transação na ponta para gerar um extrato simples para o usuário. 
+**Cenário**: Extrair extrato absoluto sem perdão de perdas. A auditoria pediu a lista onde mesmo usuários Sem Registro ainda apareçam acusando zero (Left Join).
 ```sql
 SELECT 
     c.nome_cliente, 
-    t.data_transacao, 
-    t.valor_transacao, 
-    t.tipo_transacao
-FROM clientes c
-INNER JOIN transacoes t ON c.id_cliente = t.id_cliente;
+    c.saldo,
+    t.valor_transacao
+FROM contas c
+LEFT JOIN transacoes t ON c.id_conta = t.id_conta;
 ```
 
 ---
 
-## 4. O Poder Aninhado das Subconsultas (Subqueries)
+## 4. Consulta Dinâmica e Lógica "Subquery" / EXISTS
 
 ### Teoria
-Uma _Subquery_ ou consulta aninhada é um script Select colocado dentro de um outro Select, Where ou From maior. É executada primeiro pela Database, servindo os próprios dados levantados como um parâmetro ou insumo para que o bloco externo de código consiga agir. 
+Você frequentemente sofre para filtrar grandes listas limitantes. Uma _Subquery_ aninhada é um Select rodado de forma oculta na memória do sistema devolvendo um parâmetro virtual. Usar combinações de Subqueries com `IN` (lista de verificação de lote) e `EXISTS` (valida num piscar de olhos e retorna TRUE se encontrar ocorrência) salva sua infraestrutura.
 
 ### Prática
-**Cenário**: O time de inteligência pediu o nome e o saldo de todos os clientes excepcionais do banco. Regra p/ ser excepcional: Ter um montante acima da própria MÉDIA GERAL do próprio banco.
+**Cenário**: Listar titulares operantes de contas que simultaneamente existam operando na base autônoma do e-commerce da Techstore separada.
 ```sql
-SELECT 
-    nome_cliente, 
-    saldo 
+SELECT id_conta, nome_cliente 
 FROM contas 
-WHERE saldo > (SELECT AVG(saldo) FROM contas);
+WHERE nome_cliente IN (
+    SELECT nome FROM clientes  -- Resolve PRIMEIRO e cospe um List na memória. "João, Maria..."
+);
 ```
 
 ---
 
-## 🔥 Desafio de Código - Módulo 2
+## 5. Empilhando Dicionários Absolutos (UNION vs UNION ALL)
 
-**Instruções**:
-A equipe de auditoria do Banco Central notou uma anomalia em movimentos atípicos e está te cobrando um relatório tático.
+### Teoria
+Enquanto as Joins associam horizontalmente colunas, operadores de conjunto trabalham empilhando a mesma estrutura num eixo vertical (linha a linha). 
+*   **UNION**: Empilha todos arquivos juntos. O motor exige poder computacional caçando e eliminando linhas 100% repitidas.
+*   **UNION ALL**: Operação "Burra", rápida e bruta. Trás tudo e cola sem checar repetições (recomendado p/ auditorias rápidas sem perda CPU).
 
-**Sua Tarefa (Escreva e valide esse código em seu ambiente)**:
-1. Precisamos do relátorio trazendo exatamente as colunas `nome_cliente` (da Tabela clientes) e do `calculo total acumulado` das transações dele por dia.
-2. É obrigatório haver o cruzamento usando `JOIN` de ambas.
-3. Use a função Group By e aplique ao final dela o Having para garantir a seguinte regra da auditoria: O arquivo do relatório final gerado apenas pode mostrar linhas em que a soma desse valor do mês das transações do indivíduo passarem de exatos R$ 10.000,00.
+### Prática
+**Cenário**: Empilhar um arquivo tático rápido de "Identificaveis", listando Clientes da Loja empilhados aos nossos próprios Funcionários de RH.
+```sql
+SELECT nome AS identidade_geral FROM clientes
+UNION ALL
+SELECT nome_funcionario AS identidade_geral FROM funcionarios;
+```
+
+---
+
+## 🔥 Desafio de Código - Integrador de Análise
+
+**Sua Tarefa:**
+A Receita notificou seu Diretor com urgência de um cruzamento estatístico.
+Escreva contra sua Engine Local esse Script de solução: Faça um `JOIN` estrito da tabela de "contas" atrelada perfeitamente na tabela de "transacoes" da base Finbank. Utilize `GROUP BY` e `HAVING` apenas validando saldos transacionais totais acima de mil reais sobre os IDs listados do conjunto do Join. E para testar e desafiar, construa um Relatório Subquery extraindo de volta IDs da base de `clientes` usando operador `EXISTS` acoplado ao sub-relatorio.

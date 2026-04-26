@@ -1,100 +1,107 @@
-# Módulo 4: Expert - Programação Interna e Gestão
+# Módulo 4: Expert - Programação Interna e Automação Master
 
 ## Visão Geral
-Poucos dominam essa camada profunda do conhecimento do banco. Como nível Expert, você aprenderá a encapsular as regras organizacionais para que residam perfeitamente integradas no sistema, criar gatilhos, e prover a governança rígida sobre quem e onde cada engrenagem roda na sua rede corporativa.
+Arquitetos de software precisam delegar tarefas crônicas para rodarem "abaixo" de suas próprias APIs e Sistemas por questão de segurança de red de Tráfego pesado. Dominar este módulo lhe permite engatilhar tarefas sem que o painel e servidor HTTP principal precisem realizar suor ativamente.
 
-*Cenário de Negócio*: ERP para Controle de Estoque Operacional de uma cadeia nacional de Supermercados chamada "MegaMarket".
+*Cenário de Negócio*: ERP para Controle de Operacional RH e Frotas de uma corporação nacional "MegaMarket".
 
 ---
 
 ## 1. Lógica Procedural no Banco (Stored Procedures)
 
 ### Teoria
-O banco SQL vai muito além das consultas: tem lógica avançada de programação inteiramente completa e autônoma. Uma `Stored Procedure` é um artefato executável salvo em que você consegue agrupar instruções enormes utilizando Condicionais Matemáticos, IF/ELSE, Loops de Resumo e controle massivo, e pode ser chamada via API web, via Bot etc.
+As famigeradas `Stored Procedures` (SPs). É onde a mágica dos bancos toma as vezes nas noites bancárias. Um objeto gigante empacotado possuindo código Transacional (Ifs/Elses, Loops lógicos, Parâmetros e Rollbacks preventivos) sem que dependa de programar em C# ou Python o lado da nuvem.
 
 ### Prática
-**Cenário**: Gerar o fechamento diário do caixa local e atualizar em conjunto a parte da contabilidade, evitando qualquer perigo caso as internet feche uma operação no meio deixando erro com valores parciais nas contas.
+**Cenário**: Fechamento do caixa da unidade impedindo valores picados gerarem problemas com rollback.
 ```sql
-CREATE PROCEDURE prc_fechar_diaria_caixa (
-    IN p_id_unidade INT,
-    IN p_data_lancamento DATE
+CREATE PROCEDURE prc_fechar_diaria_banco (
+    @p_numero_agencia INT
 )
+AS
 BEGIN
-    -- O 'BEGIN' inicia a amarração para a transação bloqueada se houver a pane no meio de qualquer update.
-    START TRANSACTION;
+    BEGIN TRANSACTION; -- "Salva aqui, e se tudo baixo falhar, desfaz e volta pra cá"
     
-    -- Atualiza e consolida todo saldo
-    UPDATE unidade_financeiro
-    SET total_fechado = (SELECT SUM(volume) FROM vendas WHERE unidade = p_id_unidade AND dia = p_data_lancamento)
-    WHERE unidade_fk = p_id_unidade;
+    UPDATE contas SET status_conta = 'Bloqueado Financeiro' WHERE id_agencia = @p_numero_agencia;
     
-    -- Inseri um rastreamento final na tabela de segurança no mesmo momento
-    INSERT INTO trilha_auditoria (sistema, ocorrencia, acao_em)
-    VALUES ('CAIXA', 'Fechamento final efetuado', NOW());
+    INSERT INTO tabela_log_fechamentos (data, agente) VALUES (GETDATE(), SYSTEM_USER);
     
-    -- Executa ambos se nenhum der Error: 'salva tudo real'
-    COMMIT;
+    COMMIT; -- "Deu tudo certo! Dispara o gravador universal!"
 END;
 
 -- App rodando a API na noite:
-CALL prc_fechar_diaria_caixa(1234, '2026-05-15');
+EXECUTE prc_fechar_diaria_banco 50;
 ```
-> 🛡️ **Boas Práticas (Lógica Segura)**: Adote extrema obrigatoriedade do Gerenciamento de Transações. Códigos de INSERT ou UPDATE complexos não encapsulados num bloco transacional de rollback farão o ERP quebrar em cenários paralelos com falhas sistêmicas na nuvem (o clássico "sacar o dinheiro" em A e "dar erro antes de incluir dinheiro na conta B" fazendo o saldo total se alterar ilicitamente na ponta da rede).
+> 🛡️ **Boas Práticas (ACID)**: Qualquer transação base de update que não está cercado no pacote Transaction corre forte risco de anomalias no ar.
 
 ---
 
-## 2. Automação e Trabalhos Agendados Naturais (Jobs)
+## 2. Gatilhos Autônomos em Fundo (Triggers)
 
 ### Teoria
-A necessidade de rodar grandes comandos nas madrugadas diárias faz os Administradores escalarem o próprio Banco SQL como agente automatizador. Jobs Internos do banco executam em background cronogramas rigorosos para efetuar expurgos silenciosos programados para manutenção (no Postgres se usa ext pg_cron, SQL Server MS Agent, em outros bancos chamados de EVENT).
+Bancos executando _Event-Driven Architecture_ puramente passiva. Assim entramos os `Triggers` (Gatilhos): Stored Procedures zumbis atreladas a eventos fixos em colunas que disparam 100% de forma passiva (quando se tentar deletar registros da empresa, se acorda a "Trigger de Delete" copiando aquele registro num DB de logs).
 
 ### Prática
-**Cenário**: Realizar rotina de expurgo que deleta todo registro gravado nos rastreios do Log gerados pelo Sistema Operacional acima do ciclo limite diário aceito de 3 anos todos os domingos para abrir espaço de banco, evitando travar processamento diurno. (Exemplo em rotina nativa Event do estilo MySQL):
+**Cenário**: Toda tentativa de EXCLUIR (`DELETE`) perigosa a Tabela dos Clientes tem de gerar um alerta na Auditoria secreta salvando a imagem em `log_demitidos`.
 ```sql
-CREATE EVENT evento_manutencao_expurgo
-ON SCHEDULE EVERY 1 WEEK
-STARTS '2027-01-01 02:00:00'
-DO
+CREATE TRIGGER tgr_alerta_secreto_delete
+ON clientes
+AFTER DELETE
+AS
 BEGIN
-    -- Limpa registros de mais de 3 anos de log base
-    DELETE FROM registro_log_eventos 
-    WHERE instante_log < DATE_SUB(NOW(), INTERVAL 3 YEAR);
+    -- 'deleted' é uma tabela mágica instantânea q possui as colunas da remoção original que sofreu tentativa do hit
+    INSERT INTO rh_logs_deletados (id_morto, evento_em)
+    SELECT id_cliente, GETDATE() FROM deleted;
 END;
 ```
-> 🛡️ **Boas Práticas (Tuning e Custos)**: Qualquer Query que utilize a função DELETE processa fortemente memória. Sempre coloque tarefas que gerem travas lógicas intensas (Delete e Update) de rotina agendadas e em Horários que fujam da Janela Principal Diurna dos Operadores e Usuários Ativos.
+> 🛡️ **Trigger Hell Avoidance**: Use extremamento como sal na cozinha. Engatilhar gatilho A que explode o Gatilho B e faz hit no Gatilho C, resultará em seu Servidor caindo por "Table Deadlocks".
 
 ---
 
-## 3. Segurança e Governança de Roles (GRANT e REVOKE)
+## 3. Automação Agendada Pura (Jobs / SQLServer Agent)
 
 ### Teoria
-Na administração corporativa moderna as credenciais valem ouro e precisam seguir rígidos fluxos pautados pela própria base. Com o comando `GRANT`, distribuímos "PODER" dentro do banco diretamente aos usuários, e o com `REVOKE`, limitamos/subtraimos poderes desses de acordo como mudam de áreas ou demissões. Padrão enterprise usa _Roles_ (Cargos Abstratos) não distribuindo poder por pessoa especificadamente, e sim anexando pessoa no Cargo.
+No Server Agent ou PGCron, robôs internos não precisam de gatilhos pontuais (em updates) mas trabalham nos "schedules" via calendário disparando processos agendados baseados e purgas (rotinas "Batch").
 
 ### Prática
-**Cenário**: Os auditores querem ler a planilha restrita porem sem perigo para excluírem valores por distração.
+*(Exemplo visual de Script Padrão - A sintaxe pode variar do Engine)*
 ```sql
--- Criar uma 'entidade' representacional 
-CREATE ROLE auditor_financeiro_view;
-
--- Apenas garantir Seleções para a Role em cima do schema/estrutura de pagadoras
-GRANT SELECT ON financeiro.movimentacao_pagadoras TO auditor_financeiro_view;
-
--- Dar a permissão de herdar esse cargo sem burocracia do usuário que precisava ler o cenário: carlos_jr
-GRANT auditor_financeiro_view TO 'carlos_jr'@'%';
-
--- Carlos mudou de setor para rh? Revogam a Role apenas e facilmente:
-REVOKE auditor_financeiro_view FROM 'carlos_jr'@'%';
+-- Criando Job que Executa Purga de Tabelas Mensalmente (Base Event Nativa):
+CREATE EVENT evento_manutencao_expurgo_total
+ON SCHEDULE EVERY 1 MONTH STARTS '2026-01-01 03:00:00'
+DO
+BEGIN
+    DELETE FROM registro_log_eventos WHERE instante < DATE_SUB(NOW(), INTERVAL 3 YEAR);
+END;
 ```
-> 🛡️ **Boas Práticas (Princípio de Menor Privilégio)**: Sendo arquiteto, a sua base da política em grandes projetos será de conceder `APENAS O ESSENCIAL` para as APIs e para a credencial interna. Evite espalhar o comando `GRANT ALL` e crie em produção usuários isolados (App_Usuario, App_API_Pagamento) pois no minuto seguinte em que ocorrer incidentes cibernéticos ou falhas lógicas no Back-end a base inteirinha se estilhaçará.
 
 ---
 
-## 🔥 Desafio de Código - Integrador Final: Módulo 4
+## 4. Governança Segura Tática (GRANT, REVOKE e ROLES)
 
-**O Desafio de Arquitetura**:
-As contratações de fim de ano trouxeram uma nova tribo para a equipe: o "Setor de Análise de Preços" da companhia.
-Eles preencherão o corpo de desenvolvedores do Data Analytics e precisam interagir via App com a engrenem e consumir suas estruturas sem risco ao resto das divisões sensíveis.
+### Teoria
+Usuários na base não são donos do mundo. Aplique sempre Políticas rígidas. No modelo do Azure ou corporativo o DBA cria um "Grupo Abstrato de Cargo" (`ROLE`), deposita as permissões do cargo em cima dele, e atribui as pessos físicas entrando e saindo da firma somente àquele papel sem se embaralhar.
+* `GRANT`: Concede liberação
+* `REVOKE`: Retira
 
-**A Sua Solução (Demonstre o Setup base)**:
-1. Comece gerando o arquivo da Stored Procedure com transação encapsulada pra que o setor de análise de preços consiga automatizar suas rotinas diárias e seguras de aumento sobre valores de produto por percentual único (Usando de Parâmetro recebido a "Unidade de Faturamento" pela qual será acionado).
-2. Deixe claro o código SQL p/ criar o Usuário `analistas_pricing_time` ou gerencie pela criação de uma `Role` e mostre seu `GRANT` delegando em linha a permissão vital apenas na de visualização/leitura pura no esquema Base do produto.
+### Prática
+```sql
+-- Criar uma Entidade "Perfis/Cargo/Grupo"
+CREATE ROLE leitor_financeiro;
+
+-- O Grupo Leitor Financeiro da companhia só poderá rodar Query View e Selecionar as tabelas. Nada mais.
+GRANT SELECT ON contas TO leitor_financeiro;
+
+-- Promova usuários sem estresse vinculando o papel.
+ALTER ROLE leitor_financeiro ADD MEMBER analista_joao;
+```
+
+---
+
+## 🔥 O Desafio Operacional Final de Engenheiro de Dados
+
+**O Arquitetamento Final:**
+Você acabou de montar uma área inteira com o sistema Python base nas rotinas iniciais.
+Seja Mestre.
+1. Crie uma Stored Procedure completa `Exec_AumentarSaldosBase`. Nela amarre usando Transaction p/ atualizar a tabela de `contas`, inflando em +R$50 reais fixos no saldo de contas do nosso Mock (Onde as agências delas forem "Abaixo do limiar X").
+2. Gere um Script em sequencia elaborando uma Role focada em "Seguro Auditory" onde o DBA concede puramente a Leitura (`SELECT`) à base para o estagiário fiscal que lerá este script validado.
